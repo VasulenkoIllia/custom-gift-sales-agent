@@ -3,6 +3,9 @@
 .env.deploy
 .env.*.local
 
+# Local-only compose override (publishes DB port for host dev; never on server)
+docker-compose.override.yml
+
 # Dependencies / build
 node_modules/
 dist/

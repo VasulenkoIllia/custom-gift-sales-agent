@@ -8,12 +8,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: ${TZ}
-    ports:
-      # Bind to localhost only — Postgres is reached by the app over the internal
-      # docker network (postgres:5432), so it is NEVER exposed to the internet.
-      # The host port is just for local admin (psql). Change POSTGRES_PORT in .env
-      # if the host port clashes with another project's Postgres.
-      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    # No host port published — Postgres is reached ONLY over the internal docker
+    # network (the app connects to postgres:5432). Fully isolated, never exposed,
+    # and can't clash with another Postgres on the host. For admin/backup use
+    # `docker compose exec postgres psql ...`. Local dev that runs the app on the
+    # HOST adds a host port via docker-compose.override.yml (see README).
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # On FIRST boot (empty data dir) Postgres runs these in alphabetical order:

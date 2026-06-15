@@ -69,8 +69,8 @@ npm run telegram:poll   # локально
 
 ## Типові проблеми
 
-**`port is already allocated` для postgres (напр. 5432)**
-На сервері вже працює інший Postgres. Додатку хост-порт не потрібен (він ходить по внутрішній мережі `postgres:5432`). У `.env` змініть `POSTGRES_PORT` на вільний (напр. `5433`) і `docker compose up -d`. `DATABASE_URL` НЕ міняйте — там внутрішній `@postgres:5432`.
+**`port is already allocated` для postgres**
+На сервері такого більше не буде: Postgres **не публікує хост-порт** — додаток ходить до нього лише по внутрішній мережі (`postgres:5432`). База повністю ізольована й не конфліктує з іншими Postgres на хості. Для psql/бекапу: `docker compose exec postgres psql -U app_user -d app_db`.
 
 **Бот мовчить у Telegram**
 - Перевірте вебхук: `docker compose exec app npm run telegram:set-webhook` → у `getWebhookInfo` має бути ваш URL без `last_error_message`.
