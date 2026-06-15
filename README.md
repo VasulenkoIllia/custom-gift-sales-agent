@@ -1,106 +1,58 @@
-# workflo_base_ts_integration
+# custom-gift-sales-agent
 
-Base TypeScript integration template for Workflo projects.
+Telegram-бот **техпідтримки та консультацій** для LED-ламп бренду **INTELLECT** (квадратні лампи, зроблено в Україні).
 
-## Includes
-- TypeScript
-- Docker
-- Docker Compose
-- Traefik-ready labels
-- Adaptive `AGENTS.md` for Claude/Codex workflows
+Користувач пише боту питання → бот шукає відповідь у базі знань (RAG) і відповідає українською, спираючись **виключно** на базу (без галюцинацій). База знань редагується через веб-адмінку.
 
-## Structure
-- `src/index.ts` — entry point
-- `src/lib` — helpers, adapters, clients
-- `src/types` — shared types
-- `.env.example` — environment variables example
-- `docker-compose.yml` — base container setup
-- `Dockerfile` — base image definition
-- `AGENTS.md` — project operating standard for agents
-- `docs/mvp-plan.md` — AI Sales Agent MVP plan (Telegram first)
-- `docs/sales-agent-plan.md` — comprehensive implementation plan: 8-stage machine, prompts, KB, eval, phases A-F
-- `docs/decisions.md` — key architecture and product decisions
-- `docs/integrations.md` — external integrations and requirements
-- `docs/database.md` — schema approach for consulting quality and memory
+## Сервіси в Docker
+| Сервіс | Контейнер | Що це |
+|---|---|---|
+| `app` | `${APP_NAME}-app` | Node/TS бот: Telegram webhook, RAG, веб-адмінка `/admin`, захист від спаму/витрат |
+| `postgres` | `${APP_NAME}-postgres` | PostgreSQL 16 + **pgvector** — база знань (`kb_entries` з ембедингами), історія діалогів, лічильники guard |
 
-## Deployment naming
-This template uses environment-based deployment naming.
+`APP_NAME=custom-gift-sales-agent` → контейнери `custom-gift-sales-agent-app` / `custom-gift-sales-agent-postgres`.
 
-Do not rely on `package.json.name` for container or Traefik naming.
+## Як це працює
+- **RAG**: гібридний пошук по `kb_entries` — вектор (OpenAI embeddings) + повнотекстовий + trigram (українська морфологія), м'який буст за категорією.
+- **Питання/відповідь розділені**: ембедиться лише питання + синоніми; відповідь — окремо (бот не плутає Q і A).
+- **Адмінка** `/admin`: CRUD записів, тест-пошук, тест-відповідь, налаштування агента, кнопка «🔄 Оновити пошук».
+- **Захист від витрат**: ліміти на користувача (10с/хв/год/день), strikes→mute, бюджет-kill-switch, кеш відповідей, облік токенів.
 
-Set these values in `.env`:
-- `APP_NAME` — deployment, container, and router base name
-- `APP_DOMAIN` — public domain for Traefik routing
+## Стек
+Node 20 + TypeScript (запуск через `tsx`, без білд-кроку) · PostgreSQL 16 + pgvector · OpenAI (`gpt-4.1-mini` + `text-embedding-3-small`) · Telegram Bot API · Docker + Traefik.
 
-## Example
-```env
-APP_NAME=my-project
-APP_DOMAIN=api.example.com
+## Структура
+- `src/index.ts` — HTTP-сервер (Telegram webhook + `/admin` + `/health`)
+- `src/lib/` — `rag.ts` (пошук), `ai-consultant.ts` (оркестратор), `abuse-guard.ts` (захист), `admin-api.ts`, `kb-store.ts`, `agent-config.ts`, `openai-client.ts`, `chat-store.ts`, `telegram-client.ts`
+- `src/config/` — промпти агента, категорії
+- `src/admin/index.html` — веб-адмінка (Alpine.js, без білду)
+- `db/init/` — `01_schema.sql` + `02_seed.sql` (Postgres ініціюється цим на першому старті)
+- `db/migrations/` — міграції для майбутніх змін схеми
+- `docs/DEPLOY.md` — інструкція розгортання на сервер
+
+## Локальний запуск
+```bash
+cp .env.example .env            # заповніть OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, ADMIN_USER/PASSWORD
+docker compose up -d postgres   # підняти БД
+npm install
+npm run db:migrate              # схема (на чистій БД)
+npm run dev                     # запустити бота
+npm run telegram:poll           # у 2-му терміналі — міст getUpdates → локальний webhook
 ```
+Адмінка: `http://localhost:3000/admin`.
 
-This will produce:
-- container name: `my-project-app`
-- Traefik router: `my-project`
-- Traefik service: `my-project`
+## Наповнення бази знань
+Через `/admin`: додати/редагувати запис → «🔄 Оновити пошук». Зміни застосовуються миттєво.
 
-## Run locally
-1. Copy `.env.example` to `.env`
-2. Update `APP_NAME` and `APP_DOMAIN`
-3. Install dependencies
-4. Start PostgreSQL in Docker: `docker compose up -d postgres`
-5. Run migrations: `npm run db:migrate`
-6. Start the app: `npm run dev`
-7. For local development without public URL run poll bridge: `npm run telegram:poll`
-8. For production/public URL configure Telegram webhook to `POST /webhooks/telegram`
+## Деплой на сервер
+Див. **[docs/DEPLOY.md](docs/DEPLOY.md)** — Docker + Traefik, webhook, авто-заливка бази знань.
 
-## KeyCRM quick check
-1. Set `KEYCRM_API_TOKEN` in `.env`
-2. Run `npm run keycrm:products -- --limit=5 --page=1`
-3. Run `npm run keycrm:sources` and set `KEYCRM_ORDER_SOURCE_ID` (for order creation)
-4. Run full sync: `npm run keycrm:sync`
-
-## AI consultant + vector search
-1. Set `OPENAI_API_KEY` in `.env`
-2. Build catalog chunks from CRM data: `npm run keycrm:sync`
-3. Generate/update embeddings for chunks: `npm run embeddings:catalog`
-4. Start app and polling/webhook mode (`npm run dev` + `npm run telegram:poll` for local)
-
-If `OPENAI_API_KEY` is not set, bot still answers with keyword fallback and catalog data.
-Prompt and tone can be tuned via `.env`: `AI_AGENT_LANGUAGE`, `AI_AGENT_NAME`, `AI_AGENT_SYSTEM_PROMPT_APPEND`.
-
-## Rebuild catalog chunks (no API calls)
-After changing chunk-building logic in `keycrm-sync.ts` or `rebuild-chunks.ts`, regenerate `catalog_chunks` without hitting the KeyCRM API:
-```
-npm run chunks:rebuild
-```
-Then re-run `npm run embeddings:catalog` to update vectors.
-
-## Factuality eval
-Tests whether the agent hallucinates prices, availability, or product descriptions against real `catalog_chunks`:
-```
-npm run eval:factuality
-```
-Set `EVAL_PRODUCT_LIMIT` in `.env` (default: 20). Target: < 1% hallucination rate.
-
-## Followup worker
-- Run once: `npm run followups:run`
-- Worker sends pending `day_1` and `day_7` followups from DB and writes outbound messages to `messages`.
-
-## Telegram local mode (no public URL)
-- Keep API running: `npm run dev`
-- Run poll bridge in second terminal: `npm run telegram:poll`
-- Poll bridge reads Telegram `getUpdates` and forwards each update to local `POST /webhooks/telegram`.
-
-## Current MVP data model
-- `products_raw` — raw KeyCRM product payload mirror
-- `products`, `product_offers`, `offer_stocks`, `product_categories` — normalized catalog
-- `catalog_chunks`, `catalog_embeddings` — consulting text + vectors
-- `customers`, `conversations`, `messages`, `customer_memory` — customer memory and dialog history
-- `followups` — follow-up queue (`day_1`, `day_7`)
-- `crm_orders`, `integration_events`, `sync_runs` — CRM handoff and sync observability
-- `telegram_updates` — deduplication of inbound Telegram webhook events
-
-## Notes
-- `package.json.name` is treated as a technical template name
-- Real deployment naming should always come from `.env`
-- Traefik is expected to use the external `proxy` network by default
+## Корисні команди
+| Команда | Призначення |
+|---|---|
+| `npm run dev` | запустити бота локально |
+| `npm run telegram:poll` | локальний міст для Telegram (без публічного URL) |
+| `npm run telegram:set-webhook` | підключити прод-вебхук (на сервері) |
+| `npm run embeddings:kb` | згенерувати/оновити ембединги записів KB |
+| `npm run db:migrate` | застосувати міграції БД |
+| `npm run typecheck` | перевірка типів |

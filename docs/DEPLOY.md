@@ -11,7 +11,7 @@
 
 **1. Клон + env**
 ```bash
-git clone <repo> intellect-bot && cd intellect-bot
+git clone git@github.com:VasulenkoIllia/custom-gift-sales-agent.git && cd custom-gift-sales-agent
 cp .env.deploy .env            # .env.deploy НЕ в git — перенесіть його на сервер окремо (scp)
 nano .env                      # змініть APP_DOMAIN (і TRAEFIK_* якщо інші)
 ```
