@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INTELLECT — База знань</title>
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+           margin: 0; background: #0f1115; color: #e6e8ec; font-size: 14px; }
+    header { padding: 16px 24px; background: #161922; border-bottom: 1px solid #262b36;
+             display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+    main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .row { display: flex; gap: 24px; align-items: flex-start; }
+    .col { flex: 1; min-width: 0; }
+    .panel { background: #161922; border: 1px solid #262b36; border-radius: 10px;
+             padding: 16px; margin-bottom: 16px; }
+    .panel h2 { font-size: 14px; margin: 0 0 12px; color: #9aa3b2; text-transform: uppercase;
+                letter-spacing: .04em; }
+    input, textarea, select { width: 100%; background: #0f1115; border: 1px solid #2d333f;
+        color: #e6e8ec; border-radius: 7px; padding: 8px 10px; font-size: 14px; font-family: inherit; }
+    textarea { resize: vertical; min-height: 64px; }
+    label { display: block; font-size: 12px; color: #9aa3b2; margin: 10px 0 4px; }
+    button { cursor: pointer; border: none; border-radius: 7px; padding: 8px 14px;
+             font-size: 13px; font-weight: 500; }
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn-ghost { background: #232834; color: #c7cdd8; }
+    .btn-danger { background: #3a2226; color: #f4a3a3; }
+    .btn-sm { padding: 4px 9px; font-size: 12px; }
+    .filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .filters > * { flex: 1; min-width: 120px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #20242e; vertical-align: top; }
+    th { color: #6b7384; font-weight: 500; font-size: 11px; text-transform: uppercase; }
+    .tag { display: inline-block; padding: 1px 7px; border-radius: 20px; font-size: 11px; }
+    .tag-cat { background: #1e2a3a; color: #7fb0e8; }
+    .tag-pub { background: #16301f; color: #6ee29b; }
+    .tag-draft { background: #2c2c2c; color: #b0b0b0; }
+    .tag-arch { background: #3a2226; color: #f0a0a0; }
+    .tag-pending { background: #36300f; color: #e8cf6e; }
+    .tag-ready { background: #16301f; color: #6ee29b; }
+    .muted { color: #6b7384; font-size: 12px; }
+    .q { font-weight: 500; }
+    .result { border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+    .result .score { float: right; color: #7fb0e8; font-variant-numeric: tabular-nums; }
+    .actions { display: flex; gap: 6px; }
+    .grid2 { display: flex; gap: 10px; }
+    .grid2 > * { flex: 1; }
+  </style>
+</head>
+<body x-data="kbAdmin()" x-init="init()">
+  <header>
+    <h1>🛟 INTELLECT</h1>
+    <nav style="display: flex; gap: 6px;">
+      <button :class="view==='kb' ? 'btn-primary' : 'btn-ghost'" @click="view='kb'">База знань</button>
+      <button :class="view==='agent' ? 'btn-primary' : 'btn-ghost'" @click="view='agent'; loadAgent()">⚙️ Налаштування агента</button>
+    </nav>
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;" x-show="view==='kb'">
+      <span class="muted" x-text="`${entries.length} записів`"></span>
+      <span class="tag tag-pending" x-show="pendingCount > 0" x-text="`${pendingCount} очікують ембединг`"></span>
+      <span class="tag tag-ready" x-show="pendingCount === 0">пошук актуальний</span>
+      <button class="btn-primary" @click="embedPending()" :disabled="embedding"
+              x-text="embedding ? 'Оновлюю…' : '🔄 Оновити пошук'"></button>
+    </div>
+  </header>
+
+  <main>
+    <div class="row" x-show="view==='kb'">
+      <!-- LEFT: list -->
+      <div class="col" style="flex: 1.6;">
+        <div class="panel">
+          <div class="filters">
+            <input type="text" placeholder="Пошук…" x-model="filters.q" @input.debounce.300ms="load()" />
+            <select x-model="filters.category" @change="load()">
+              <option value="">Всі категорії</option>
+              <template x-for="c in meta.categories" :key="c"><option :value="c" x-text="c"></option></template>
+            </select>
+            <select x-model="filters.status" @change="load()">
+              <option value="">Всі статуси</option>
+              <template x-for="s in meta.statuses" :key="s"><option :value="s" x-text="s"></option></template>
+            </select>
+          </div>
+          <table>
+            <thead><tr><th>Питання</th><th>Категорія</th><th>Статус</th><th>Ембед.</th><th></th></tr></thead>
+            <tbody>
+              <template x-for="e in entries" :key="e.id">
+                <tr>
+                  <td>
+                    <div class="q" x-text="e.question"></div>
+                    <div class="muted" x-text="e.entry_type"></div>
+                  </td>
+                  <td><span class="tag tag-cat" x-show="e.category" x-text="e.category"></span></td>
+                  <td>
+                    <span class="tag" :class="{'tag-pub': e.status==='published','tag-draft': e.status==='draft','tag-arch': e.status==='archived'}" x-text="e.status"></span>
+                  </td>
+                  <td>
+                    <span class="tag" :class="e.embedding_pending ? 'tag-pending' : 'tag-ready'"
+                          x-text="e.embedding_pending ? 'pending' : 'ready'"></span>
+                  </td>
+                  <td>
+                    <div class="actions">
+                      <button class="btn-ghost btn-sm" @click="edit(e)">✎</button>
+                      <button class="btn-ghost btn-sm" @click="archive(e)" x-show="e.status!=='archived'">📁</button>
+                      <button class="btn-danger btn-sm" @click="remove(e)">🗑</button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="entries.length===0"><td colspan="5" class="muted">Порожньо.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- RIGHT: form + test search -->
+      <div class="col">
+        <div class="panel">
+          <h2 x-text="form.id ? 'Редагувати запис' : 'Новий запис'"></h2>
+          <div class="grid2">
+            <div>
+              <label>Тип</label>
+              <select x-model="form.entry_type">
+                <template x-for="t in meta.entry_types" :key="t"><option :value="t" x-text="t"></option></template>
+              </select>
+            </div>
+            <div>
+              <label>Категорія</label>
+              <select x-model="form.category">
+                <option value="">—</option>
+                <template x-for="c in meta.categories" :key="c"><option :value="c" x-text="c"></option></template>
+              </select>
+            </div>
+          </div>
+          <label>Питання / Назва</label>
+          <input type="text" x-model="form.question" placeholder="Лампа не підключається до Wi-Fi" />
+          <label>Синоніми / перефрази (по одному на рядок) — використовуються для пошуку</label>
+          <textarea x-model="form.aliasesText" placeholder="не бачить вайфай&#10;не конектиться до мережі"></textarea>
+          <label>Відповідь (її бачить лише користувач, у пошук НЕ потрапляє)</label>
+          <textarea x-model="form.answer" style="min-height: 120px;"></textarea>
+          <label>Статус</label>
+          <select x-model="form.status">
+            <template x-for="s in meta.statuses" :key="s"><option :value="s" x-text="s"></option></template>
+          </select>
+          <div style="margin-top: 14px; display: flex; gap: 8px;">
+            <button class="btn-primary" @click="save()" x-text="form.id ? 'Зберегти' : 'Створити'"></button>
+            <button class="btn-ghost" @click="resetForm()" x-show="form.id">Скасувати</button>
+          </div>
+          <div class="muted" x-show="msg" x-text="msg" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="panel">
+          <h2>🔍 Тест пошуку (що знайде AI)</h2>
+          <input type="text" placeholder="Введіть питання клієнта…" x-model="testQuery"
+                 @keydown.enter="runTest()" />
+          <button class="btn-ghost" style="margin-top: 8px;" @click="runTest()">Перевірити</button>
+          <div class="muted" x-show="testDetected" style="margin: 10px 0;">
+            Детектована категорія: <span class="tag tag-cat" x-text="testDetected"></span>
+          </div>
+          <div style="margin-top: 10px;">
+            <template x-for="(m, i) in testResults" :key="m.id">
+              <div class="result">
+                <span class="score" x-text="m.score.toFixed(4)"></span>
+                <div><span class="tag tag-cat" x-show="m.category" x-text="m.category"></span>
+                     <span class="q" x-text="' ' + m.question"></span></div>
+                <div class="muted" x-text="m.answer" style="margin-top: 4px;"></div>
+              </div>
+            </template>
+            <div class="muted" x-show="testRan && testResults.length===0">Нічого не знайдено.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== AGENT SETTINGS VIEW ===== -->
+    <div class="row" x-show="view==='agent'">
+      <div class="col">
+        <div class="panel">
+          <h2>⚙️ Налаштування агента</h2>
+          <label>Ім'я / персона</label>
+          <input type="text" x-model="agent.persona" placeholder="Соня" />
+          <label>Роль та інструкції (додається в системний промпт; guardrails зашиті в коді)</label>
+          <textarea x-model="agent.instructions" style="min-height: 140px;"
+            placeholder="Бренд INTELLECT — LED-лампи… Ти допомагаєш з технічними питаннями…"></textarea>
+          <label>Повідомлення-fallback (коли нічого не знайдено / LLM недоступний)</label>
+          <textarea x-model="agent.fallback_message"></textarea>
+          <div class="grid2">
+            <div>
+              <label>Модель</label>
+              <input type="text" x-model="agent.model" placeholder="gpt-4.1-mini" />
+            </div>
+            <div>
+              <label>Мова</label>
+              <input type="text" x-model="agent.language" placeholder="українська" />
+            </div>
+          </div>
+          <div style="margin-top: 14px; display: flex; gap: 8px;">
+            <button class="btn-primary" @click="saveAgent()" :disabled="agentSaving"
+                    x-text="agentSaving ? 'Зберігаю…' : 'Зберегти й застосувати'"></button>
+          </div>
+          <div class="muted" x-show="agentMsg" x-text="agentMsg" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="panel">
+          <h2>🎚️ Параметри пошуку</h2>
+          <div class="grid2">
+            <div>
+              <label>top-K (скільки записів брати)</label>
+              <input type="number" min="1" max="20" step="1" x-model.number="agent.top_k" />
+            </div>
+            <div>
+              <label>Поріг вектора (менше = суворіше)</label>
+              <input type="number" min="0.1" max="1" step="0.05" x-model.number="agent.vector_threshold" />
+            </div>
+          </div>
+          <label>Буст категорії (1 = вимкнено, 1.25 = типово)</label>
+          <input type="number" min="1" max="3" step="0.05" x-model.number="agent.category_boost" />
+          <div class="muted" style="margin-top: 8px;">Зберігаються разом із кнопкою «Зберегти й застосувати» вгорі.</div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <h2>🧪 Тест відповіді (повна відповідь бота)</h2>
+          <input type="text" placeholder="Питання клієнта…" x-model="answerQuery" @keydown.enter="runAnswer()" />
+          <button class="btn-primary" style="margin-top: 8px;" @click="runAnswer()" :disabled="answering"
+                  x-text="answering ? 'Думаю…' : 'Запитати бота'"></button>
+          <template x-if="answerResult">
+            <div style="margin-top: 14px;">
+              <div class="muted" style="margin-bottom: 6px;">
+                джерело: <span x-text="answerResult.source"></span> ·
+                категорія: <span x-text="answerResult.detectedCategory || '—'"></span> ·
+                використано записів: <span x-text="answerResult.usedMatches"></span>
+              </div>
+              <div class="result" style="white-space: pre-wrap;" x-text="answerResult.text"></div>
+              <div class="muted" style="margin: 10px 0 4px;">Знайдені записи (контекст для AI):</div>
+              <template x-for="(m,i) in answerResult.matches" :key="m.id">
+                <div class="result">
+                  <span class="score" x-text="m.score.toFixed(3)"></span>
+                  <span class="tag tag-cat" x-show="m.category" x-text="m.category"></span>
+                  <span class="q" x-text="' ' + m.question"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function kbAdmin() {
+      return {
+        entries: [],
+        meta: { categories: [], entry_types: ['faq','guide'], statuses: ['draft','published','archived'] },
+        filters: { q: '', category: '', status: '' },
+        form: { id: null, entry_type: 'faq', category: '', question: '', aliasesText: '', answer: '', status: 'published' },
+        msg: '',
+        testQuery: '', testResults: [], testDetected: '', testRan: false,
+        embedding: false,
+        view: 'kb',
+        agent: { persona: '', instructions: '', fallback_message: '', model: '', language: '', top_k: 6, vector_threshold: 0.45, category_boost: 1.25 },
+        agentMsg: '', agentSaving: false,
+        answerQuery: '', answerResult: null, answering: false,
+
+        get pendingCount() { return this.entries.filter(e => e.embedding_pending).length; },
+
+        blankForm() {
+          return { id: null, entry_type: 'faq', category: '', question: '', aliasesText: '', answer: '', status: 'published' };
+        },
+        async init() {
+          const meta = await this.api('GET', '/admin/api/meta');
+          if (meta) this.meta = meta;
+          await this.load();
+        },
+        async api(method, url, body) {
+          const opts = { method, headers: {} };
+          if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+          const res = await fetch(url, opts);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { this.msg = '⚠ ' + (data.error || res.status); return null; }
+          return data;
+        },
+        async load() {
+          const p = new URLSearchParams();
+          if (this.filters.q) p.set('q', this.filters.q);
+          if (this.filters.category) p.set('category', this.filters.category);
+          if (this.filters.status) p.set('status', this.filters.status);
+          const data = await this.api('GET', '/admin/api/entries?' + p.toString());
+          if (data) this.entries = data.entries;
+        },
+        edit(e) {
+          this.form = {
+            id: e.id, entry_type: e.entry_type, category: e.category || '',
+            question: e.question, aliasesText: (e.aliases || []).join('\n'),
+            answer: e.answer, status: e.status,
+          };
+          this.msg = '';
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+        resetForm() { this.form = this.blankForm(); this.msg = ''; },
+        async save() {
+          const payload = {
+            entry_type: this.form.entry_type,
+            category: this.form.category || null,
+            question: this.form.question,
+            aliases: this.form.aliasesText.split('\n').map(s => s.trim()).filter(Boolean),
+            answer: this.form.answer,
+            status: this.form.status,
+          };
+          const data = this.form.id
+            ? await this.api('PUT', '/admin/api/entries/' + this.form.id, payload)
+            : await this.api('POST', '/admin/api/entries', payload);
+          if (data) { this.msg = '✓ Збережено. Опубліковані записи бот бачить одразу; для точного семантичного пошуку натисніть «🔄 Оновити пошук».'; this.resetForm(); await this.load(); }
+        },
+        async archive(e) {
+          if (!confirm('Архівувати «' + e.question + '»?')) return;
+          await this.api('POST', '/admin/api/entries/' + e.id + '/archive');
+          await this.load();
+        },
+        async remove(e) {
+          if (!confirm('Видалити назавжди «' + e.question + '»?')) return;
+          await this.api('DELETE', '/admin/api/entries/' + e.id);
+          await this.load();
+        },
+        async runTest() {
+          if (!this.testQuery.trim()) return;
+          this.testRan = false;
+          const data = await this.api('POST', '/admin/api/test-search', { query: this.testQuery });
+          if (data) { this.testResults = data.matches; this.testDetected = data.detectedCategory || ''; this.testRan = true; }
+        },
+        async embedPending() {
+          this.embedding = true; this.msg = '';
+          const data = await this.api('POST', '/admin/api/embed-pending');
+          this.embedding = false;
+          if (data) {
+            this.msg = `✓ Оновлено ембединги: ${data.embedded}` + (data.failed ? ` (помилок: ${data.failed})` : '');
+            await this.load();
+          }
+        },
+        async loadAgent() {
+          const data = await this.api('GET', '/admin/api/agent');
+          if (data) this.agent = data.agent;
+        },
+        async saveAgent() {
+          this.agentSaving = true; this.agentMsg = '';
+          const data = await this.api('PUT', '/admin/api/agent', this.agent);
+          this.agentSaving = false;
+          if (data) { this.agent = data.agent; this.agentMsg = '✓ Збережено й застосовано до живого бота.'; }
+        },
+        async runAnswer() {
+          if (!this.answerQuery.trim()) return;
+          this.answering = true; this.answerResult = null;
+          const data = await this.api('POST', '/admin/api/test-answer', { query: this.answerQuery });
+          this.answering = false;
+          if (data) this.answerResult = data;
+        },
+      };
+    }
+  </script>
+</body>
+</html>

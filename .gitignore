@@ -1,0 +1,20 @@
+# Secrets — NEVER commit
+.env
+.env.deploy
+.env.*.local
+
+# Dependencies / build
+node_modules/
+dist/
+
+# DB snapshots
+.backups/
+
+# Logs / OS
+*.log
+npm-debug.log*
+.DS_Store
+
+# Editor
+.idea/
+.vscode/

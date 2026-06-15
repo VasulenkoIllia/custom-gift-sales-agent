@@ -1,0 +1,76 @@
+services:
+  postgres:
+    container_name: ${APP_NAME}-postgres
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # On FIRST boot (empty data dir) Postgres runs these in alphabetical order:
+      #   01_schema.sql  — full schema (tables, extensions, indexes)
+      #   02_seed.sql    — KB entries (+embeddings), agent config, migration ledger
+      # Re-deploys keep the persisted volume and skip this.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  app:
+    container_name: ${APP_NAME}-app
+    working_dir: /app
+    init: true
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK}"
+      - "traefik.http.routers.${APP_NAME}.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.${APP_NAME}.entrypoints=${TRAEFIK_ENTRYPOINT}"
+      - "traefik.http.routers.${APP_NAME}.tls=${TRAEFIK_TLS}"
+      - "traefik.http.routers.${APP_NAME}.tls.certresolver=${TRAEFIK_CERTRESOLVER}"
+      - "traefik.http.services.${APP_NAME}.loadbalancer.server.port=${PORT}"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK}
+
+volumes:
+  postgres-data:
