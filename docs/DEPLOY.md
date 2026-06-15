@@ -66,3 +66,24 @@ docker compose exec postgres pg_dump -U app_user -d app_db --data-only -t kb_ent
 docker compose exec app npm run telegram:set-webhook -- --delete
 npm run telegram:poll   # локально
 ```
+
+## Типові проблеми
+
+**`port is already allocated` для postgres (напр. 5432)**
+На сервері вже працює інший Postgres. Додатку хост-порт не потрібен (він ходить по внутрішній мережі `postgres:5432`). У `.env` змініть `POSTGRES_PORT` на вільний (напр. `5433`) і `docker compose up -d`. `DATABASE_URL` НЕ міняйте — там внутрішній `@postgres:5432`.
+
+**Бот мовчить у Telegram**
+- Перевірте вебхук: `docker compose exec app npm run telegram:set-webhook` → у `getWebhookInfo` має бути ваш URL без `last_error_message`.
+- `docker compose logs -f app` — чи приходять апдейти.
+- Переконайтесь, що `TELEGRAM_WEBHOOK_SECRET` у `.env` збігається (сервер перевіряє заголовок).
+
+**502 / "Bad Gateway" від Traefik**
+- `docker compose ps` — контейнер `app` має бути `healthy`.
+- Перевірте, що `APP_NAME`, `APP_DOMAIN`, `TRAEFIK_*` у `.env` коректні та домен у тій самій мережі `proxy`.
+
+**Сертифікат не видається (HTTPS не працює)**
+- A-запис `APP_DOMAIN` має вказувати на сервер ДО старту.
+- `TRAEFIK_CERTRESOLVER` має збігатися з вашим (у прикладі `cf`).
+
+**База знань порожня після старту**
+initdb (`db/init/`) виконується лише на ПОРОЖНІЙ БД. Якщо том `postgres-data` уже існував — схема/дані не перезаливались. Для чистого старту: `docker compose down -v` (⚠️ видаляє дані) і знову `up -d`.
